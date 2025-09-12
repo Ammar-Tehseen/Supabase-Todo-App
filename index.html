@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Supabase Todo App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center">
+
+  <!-- Auth Section -->
+  <div id="auth-section" class="w-full max-w-sm bg-white p-6 rounded-2xl shadow-md">
+    <h2 class="text-2xl font-bold mb-4 text-center">Todo App</h2>
+    <input id="email" type="email" placeholder="Email" class="w-full mb-2 p-2 border rounded"/>
+    <input id="password" type="password" placeholder="Password" class="w-full mb-2 p-2 border rounded"/>
+    <button id="signup" class="w-full bg-green-500 text-white p-2 rounded mb-2">Sign Up</button>
+    <button id="login" class="w-full bg-blue-500 text-white p-2 rounded">Login</button>
+  </div>
+
+  <!-- Todo Section -->
+  <div id="todo-section" class="hidden w-full max-w-lg bg-white p-6 rounded-2xl shadow-md mt-6">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Your Todos</h2>
+      <button id="logout" class="bg-red-500 text-white px-3 py-1 rounded">Logout</button>
+    </div>
+
+    <!-- Add Todo -->
+    <input id="title" type="text" placeholder="Todo Title" class="w-full mb-2 p-2 border rounded"/>
+    <textarea id="description" placeholder="Todo Description" class="w-full mb-2 p-2 border rounded"></textarea>
+    <input id="image" type="file" class="w-full mb-2"/>
+    <button id="addTodo" class="w-full bg-blue-600 text-white p-2 rounded mb-4">Add Todo</button>
+
+    <!-- Todo List -->
+    <ul id="todoList" class="space-y-4"></ul>
+  </div>
+
+  <script>
+    
+    // TODO: Replace with your Supabase credentials
+    const SUPABASE_URL = "https://tofbqbjplmudrvfjvivk.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvZmJxYmpwbG11ZHJ2Zmp2aXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMTgxNjgsImV4cCI6MjA3MjU5NDE2OH0.iaelpKNM0V4gpedmtHknIVJXfbdYvaPceWczeyN6pBQ";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const authSection = document.getElementById("auth-section");
+    const todoSection = document.getElementById("todo-section");
+
+    const signupBtn = document.getElementById("signup");
+    const loginBtn = document.getElementById("login");
+    const logoutBtn = document.getElementById("logout");
+    const addTodoBtn = document.getElementById("addTodo");
+    const todoList = document.getElementById("todoList");
+
+    // AUTH HANDLERS
+    signupBtn.onclick = async () => {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      let { error } = await supabase.auth.signUp({ email, password });
+      if (error) alert(error.message);
+      else alert("Signup successful! Check your email.");
+    };
+
+    loginBtn.onclick = async () => {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      let { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) alert(error.message);
+      else checkUser();
+    };
+
+    logoutBtn.onclick = async () => {
+      await supabase.auth.signOut();
+      checkUser();
+    };
+
+    // CHECK SESSION
+    async function checkUser() {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        authSection.classList.add("hidden");
+        todoSection.classList.remove("hidden");
+        loadTodos();
+      } else {
+        authSection.classList.remove("hidden");
+        todoSection.classList.add("hidden");
+      }
+    }
+
+    // ADD TODO
+    addTodoBtn.onclick = async () => {
+      const title = document.getElementById("title").value;
+      const description = document.getElementById("description").value;
+      const file = document.getElementById("image").files[0];
+
+      let imageUrl = null;
+      if (file) {
+        const filePath = `${Date.now()}_${file.name}`;
+        let { error: uploadError } = await supabase.storage.from("todo-images").upload(filePath, file);
+        if (uploadError) {
+          alert("Image upload failed!");
+          return;
+        }
+        imageUrl = supabase.storage.from("todo-images").getPublicUrl(filePath).data.publicUrl;
+      }
+
+      const user = (await supabase.auth.getUser()).data.user;
+      let { error } = await supabase.from("todos").insert([
+        { title, description, image_url: imageUrl, user_id: user.id }
+      ]);
+
+      if (error) alert(error.message);
+      else {
+        document.getElementById("title").value = "";
+        document.getElementById("description").value = "";
+        document.getElementById("image").value = "";
+        loadTodos();
+      }
+    };
+
+    // LOAD TODOS
+    async function loadTodos() {
+      const user = (await supabase.auth.getUser()).data.user;
+      let { data: todos, error } = await supabase.from("todos").select("*").eq("user_id", user.id);
+      if (error) return alert(error.message);
+
+      todoList.innerHTML = "";
+      todos.forEach(todo => {
+        let li = document.createElement("li");
+        li.className = "p-4 border rounded-lg shadow";
+        li.innerHTML = `
+          <h3 class="font-bold">${todo.title}</h3>
+          <p>${todo.description}</p>
+          ${todo.image_url ? `<img src="${todo.image_url}" class="w-32 mt-2 rounded"/>` : ""}
+        `;
+        todoList.appendChild(li);
+      });
+    }
+
+    checkUser();
+  </script>
+</body>
+</html>
